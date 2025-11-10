@@ -1,0 +1,6 @@
+.venv/
+data/
+requirements.txt
+.vscode/
+License
+README.md
