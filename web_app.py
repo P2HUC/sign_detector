@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import pickle
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import av
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode, RTCConfiguration
 import os
@@ -37,15 +37,60 @@ RTC_CONFIGURATION = RTCConfiguration(
 class SignLanguageDetector(VideoTransformerBase):
     def __init__(self):
         self.mp_hands = mp.solutions.hands
+        # For video, use static_image_mode=False for better performance
         self.hands = self.mp_hands.Hands(
-            static_image_mode=True,
-            min_detection_confidence=0.3,
+            static_image_mode=False,
+            min_detection_confidence=0.5,
             max_num_hands=2
         )
+        self.font_path = self.find_font()
+
+    def find_font(self):
+        env_path = os.environ.get('SIGN_FONT_PATH')
+        if env_path and os.path.isfile(env_path):
+            return env_path
+        candidates = [
+            r'C:\Windows\Fonts\ARIALUNI.TTF',
+            r'C:\Windows\Fonts\arial.ttf',
+            r'C:\Windows\Fonts\tahoma.ttf',
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return p
+        return None
+
+    def draw_text_pil(self, img_bgr, text, position, font_path=None, font_size=24, color=(0,0,0), outline=(255,255,255), stroke_width=2):
+        # Convert to RGB and use Pillow to draw Unicode text
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb)
+        draw = ImageDraw.Draw(pil_img)
+        font = None
+        if font_path:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except Exception:
+                font = ImageFont.load_default()
+        else:
+            font = ImageFont.load_default()
+        try:
+            draw.text(position, text, font=font, fill=(color[2], color[1], color[0]), stroke_width=stroke_width, stroke_fill=(outline[2], outline[1], outline[0]))
+        except TypeError:
+            x, y = position
+            for ox in range(-stroke_width, stroke_width+1):
+                for oy in range(-stroke_width, stroke_width+1):
+                    draw.text((x+ox, y+oy), text, font=font, fill=(outline[2], outline[1], outline[0]))
+            draw.text(position, text, font=font, fill=(color[2], color[1], color[0]))
+        return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         
     def recv(self, frame):
         try:
             img = frame.to_ndarray(format="bgr24")
+            # Resize incoming frames to a fixed width to reduce processing cost
+            target_w = 640
+            h, w, _ = img.shape
+            if w != target_w:
+                scale = target_w / float(w)
+                img = cv2.resize(img, (target_w, int(h * scale)))
             H, W, _ = img.shape
             
             # Process the image
@@ -99,11 +144,14 @@ class SignLanguageDetector(VideoTransformerBase):
                     y1 = int(min(y_) * H) - 10
                     x2 = int(max(x_) * W) + 10
                     y2 = int(max(y_) * H) + 10
-                    
                     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 4)
-                    cv2.putText(img, predicted_character, (x1, y1 - 10), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 255), 3, 
-                              cv2.LINE_AA)
+                    # Use Pillow to render Unicode (Vietnamese) text
+                    if self.font_path:
+                        img = self.draw_text_pil(img, str(predicted_character), (x1, max(0, y1 - 40)), font_path=self.font_path, font_size=32, color=(0,0,255), outline=(255,255,255), stroke_width=2)
+                    else:
+                        cv2.putText(img, predicted_character, (x1, y1 - 10), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 255), 3, 
+                                  cv2.LINE_AA)
             
             return av.VideoFrame.from_ndarray(img, format="bgr24")
             
@@ -133,14 +181,26 @@ def main():
     
     # WebRTC Streamer
     st.markdown("### Live Detection")
+    # Request a higher resolution camera if available; browsers will honor if supported
+    media_constraints = {
+        "video": {"width": {"ideal": 1280}, "height": {"ideal": 720}},
+        "audio": False,
+    }
+
     webrtc_ctx = webrtc_streamer(
         key="sign-language-detection",
         mode=WebRtcMode.SENDRECV,
         rtc_configuration=RTC_CONFIGURATION,
         video_processor_factory=SignLanguageDetector,
-        media_stream_constraints={"video": True, "audio": False},
+        media_stream_constraints=media_constraints,
         async_processing=True,
     )
+
+    # Performance tips
+    st.sidebar.markdown("**Performance tips:**")
+    st.sidebar.markdown("- Use Chrome/Edge for best WebRTC support")
+    st.sidebar.markdown("- Allow the camera to use a 720p or 1080p stream when prompted")
+    st.sidebar.markdown("- Close other camera-using apps to increase frame-rate")
 
 if __name__ == "__main__":
     if model is None:

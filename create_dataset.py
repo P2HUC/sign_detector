@@ -4,6 +4,9 @@ import pickle
 import mediapipe as mp
 import cv2
 import matplotlib.pyplot as plt
+from PIL import Image
+import numpy as np
+from collections import Counter
 
 
 mp_hands = mp.solutions.hands
@@ -33,11 +36,14 @@ for dir_ in os.listdir(DATA_DIR):
         x_ = []
         y_ = []
 
-        img = cv2.imread(img_full_path)
-        if img is None:
-            # Unreadable image; skip
+        # Use Pillow to open images (better Unicode path support on Windows)
+        try:
+            with Image.open(img_full_path) as pil_img:
+                pil_img = pil_img.convert('RGB')
+                img_rgb = np.array(pil_img)
+        except Exception as e:
+            print(f"[ WARN ] can't open/read file: '{img_full_path}': {e}")
             continue
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         results = hands.process(img_rgb)
         if results.multi_hand_landmarks:
@@ -68,3 +74,11 @@ for dir_ in os.listdir(DATA_DIR):
 
 with open('data.pickle', 'wb') as f:
     pickle.dump({'data': data, 'labels': labels}, f)
+
+if labels:
+    counts = Counter(labels)
+    print("Dataset summary:")
+    for cls, cnt in counts.items():
+        print(f"  {cls}: {cnt} images")
+else:
+    print("No images were found when creating the dataset.")

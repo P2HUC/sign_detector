@@ -3,6 +3,7 @@ import cv2
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from PIL import Image, ImageTk
+import numpy as np
 import threading
 import queue
 import time
@@ -136,7 +137,10 @@ class SignLanguageCollector:
             return
         
         self.collecting = True
-        self.counter = len(list((self.DATA_DIR / self.current_sign).glob('*.jpg')))
+        # Ensure the sign directory exists before starting
+        sign_dir = self.DATA_DIR / self.current_sign
+        sign_dir.mkdir(parents=True, exist_ok=True)
+        self.counter = len(list(sign_dir.glob('*.jpg')))
         self.capture_btn.config(text="Stop Capture")
         self.sign_combobox.config(state=tk.DISABLED)
         self.status_var.set(f"Capturing images for '{self.current_sign}' - {self.counter} collected")
@@ -186,8 +190,22 @@ class SignLanguageCollector:
                 
                 # Save image if collecting
                 if self.collecting and self.current_sign:
-                    save_path = self.DATA_DIR / self.current_sign / f"{self.counter}.jpg"
-                    cv2.imwrite(str(save_path), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+                    sign_dir = self.DATA_DIR / self.current_sign
+                    sign_dir.mkdir(parents=True, exist_ok=True)
+                    # Use counter and timestamp to avoid accidental overwrite
+                    timestamp = int(time.time() * 1000)
+                    save_name = f"{self.counter}_{timestamp}.jpg"
+                    save_path = sign_dir / save_name
+                    # Use Pillow to save the image (works with Unicode paths on Windows)
+                    try:
+                        img_pil = Image.fromarray(frame_rgb)
+                        img_pil.save(str(save_path), format='JPEG')
+                        print(f"Saved image to {save_path}")
+                        saved = True
+                    except Exception as e:
+                        print(f"Failed to save image to {save_path}: {e}")
+                        self.status_var.set(f"Failed to save image to {save_path}")
+                        saved = False
                     self.counter += 1
                     self.status_var.set(f"Capturing images for '{self.current_sign}' - {self.counter} collected")
                     self.progress_var.set((self.counter / self.images_to_capture) * 100)

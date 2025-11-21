@@ -3,6 +3,8 @@ import pickle
 import cv2
 import mediapipe as mp
 import numpy as np
+import os
+from PIL import Image, ImageDraw, ImageFont
 
 model_dict = pickle.load(open('./model.p', 'rb'))
 model = model_dict['model']
@@ -27,6 +29,82 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
 hands = mp_hands.Hands(static_image_mode=True, min_detection_confidence=0.3, max_num_hands=2)
+
+
+def find_font():
+    """Try to locate a TrueType font that supports Vietnamese characters.
+
+    Priority:
+    1. Environment variable `SIGN_FONT_PATH`
+    2. Common Windows fonts in `C:\\Windows\\Fonts`
+    3. Fall back to PIL default font (may not support Vietnamese)
+    """
+    env_path = os.environ.get('SIGN_FONT_PATH')
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
+    # Common Windows font candidates
+    candidates = [
+        r'C:\Windows\Fonts\ARIALUNI.TTF',
+        r'C:\Windows\Fonts\arial.ttf',
+        r'C:\Windows\Fonts\times.ttf',
+        r'C:\Windows\Fonts\seguiemj.ttf',
+        r'C:\Windows\Fonts\tahoma.ttf',
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+
+    return None
+
+
+def draw_text_pil(img_bgr, text, position, font_path=None, font_size=32, color=(0, 0, 0), outline=(255, 255, 255), stroke_width=2):
+    """Draw Unicode text onto an OpenCV BGR image using Pillow and return BGR image.
+
+    - img_bgr: OpenCV image in BGR
+    - text: string (can be Unicode)
+    - position: (x, y) top-left
+    - font_path: optional TrueType font path
+    - color: text color as BGR tuple
+    - outline: outline color as BGR tuple
+    - stroke_width: outline thickness
+    """
+    # Convert BGR to RGB for Pillow
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(img_rgb)
+    draw = ImageDraw.Draw(pil_img)
+
+    # Determine font
+    font = None
+    if font_path:
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+        except Exception:
+            font = None
+    if font is None:
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+
+    # Pillow expects color in RGB
+    color_rgb = (color[2], color[1], color[0])
+    outline_rgb = (outline[2], outline[1], outline[0])
+
+    # Use stroke_width/stroke_fill (Pillow >=5.2 supports stroke)
+    try:
+        draw.text(position, text, font=font, fill=color_rgb, stroke_width=stroke_width, stroke_fill=outline_rgb)
+    except TypeError:
+        # Older Pillow: emulate outline by drawing text multiple times
+        x, y = position
+        for ox in range(-stroke_width, stroke_width + 1):
+            for oy in range(-stroke_width, stroke_width + 1):
+                draw.text((x + ox, y + oy), text, font=font, fill=outline_rgb)
+        draw.text(position, text, font=font, fill=color_rgb)
+
+    # Convert back to BGR OpenCV image
+    result = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    return result
 
 # Load the label mapping from the training data
 with open('data.pickle', 'rb') as f:
@@ -95,12 +173,10 @@ while True:
         # Get the predicted label directly (it's already a string)
         predicted_character = prediction[0]
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), 4)
-        cv2.putText(frame, predicted_character, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 3,
-                    cv2.LINE_AA)
+        frame = draw_text_pil(frame, str(predicted_character), (x1, max(0, y1 - 40)), font_path=find_font(), font_size=36, color=(0, 0, 0), outline=(255, 255, 255), stroke_width=3)
 
     # Add instruction text
-    cv2.putText(frame, 'Press Q to quit', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    frame = draw_text_pil(frame, 'Press Q to quit', (10, 30), font_path=find_font(), font_size=18, color=(0, 0, 255), outline=(255, 255, 255), stroke_width=1)
     
     cv2.imshow('Sign Language Detector', frame)
     

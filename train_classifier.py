@@ -11,6 +11,13 @@ data_dict = pickle.load(open('./data.pickle', 'rb'))
 data = np.asarray(data_dict['data'])
 labels = np.asarray(data_dict['labels'])
 
+# Basic validation: ensure we have samples before splitting
+if data.size == 0 or len(labels) == 0:
+	print("No training data found in 'data.pickle'.")
+	print("Run `create_dataset.py` to generate `data.pickle` from images placed under the `data/` folder.")
+	raise SystemExit(1)
+
+# Proceed to split the dataset
 x_train, x_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, shuffle=True, stratify=labels)
 
 model = RandomForestClassifier()
