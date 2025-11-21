@@ -1,5 +1,10 @@
 import streamlit as st
-import cv2
+try:
+    import cv2
+    cv2_import_error = None
+except Exception as e:
+    cv2 = None
+    cv2_import_error = e
 import numpy as np
 import mediapipe as mp
 import pickle
@@ -19,7 +24,7 @@ st.set_page_config(
 st.title("Sign Language Detection")
 st.write("Real-time sign language detection using MediaPipe and machine learning")
 
-# Load the model
+    # Load the model
 try:
     model_dict = pickle.load(open('./model.p', 'rb'))
     model = model_dict['model']
@@ -27,6 +32,14 @@ try:
 except Exception as e:
     st.error(f"❌ Error loading model: {e}")
     model = None
+
+    # If cv2 failed to import, show a helpful error and stop
+    if cv2 is None:
+        st.error("❌ OpenCV failed to import on this environment.\n"
+                 "This commonly happens on Streamlit Cloud where OpenCV GUI binaries are not available.\n"
+                 "For deployment, ensure `requirements.txt` uses `opencv-python-headless`.\n"
+                 f"Import error details: {cv2_import_error}")
+        st.stop()
 
 # RTC Configuration for WebRTC
 RTC_CONFIGURATION = RTCConfiguration(
