@@ -43,6 +43,13 @@ def find_font():
     if env_path and os.path.isfile(env_path):
         return env_path
 
+    # Local fonts dir (repo) - prefer a bundled unicode font
+    fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+    os.makedirs(fonts_dir, exist_ok=True)
+    noto_path = os.path.join(fonts_dir, 'NotoSansVN-Regular.ttf')
+    if os.path.isfile(noto_path):
+        return noto_path
+
     # Common Windows font candidates
     candidates = [
         r'C:\Windows\Fonts\ARIALUNI.TTF',
@@ -55,7 +62,14 @@ def find_font():
         if os.path.isfile(p):
             return p
 
-    return None
+    # Try downloading Noto Sans VN (open-source) into ./fonts/
+    try:
+        import urllib.request
+        font_url = 'https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansVN/NotoSansVN-Regular.ttf'
+        urllib.request.urlretrieve(font_url, noto_path)
+        return noto_path
+    except Exception:
+        return None
 
 
 def draw_text_pil(img_bgr, text, position, font_path=None, font_size=32, color=(0, 0, 0), outline=(255, 255, 255), stroke_width=2):
